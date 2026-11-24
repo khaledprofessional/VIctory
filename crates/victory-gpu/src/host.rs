@@ -604,9 +604,10 @@ impl Host {
             tracing::warn!(ms = gpu.as_millis(), lists = runs.len(), ?pipelines, "slow host submission");
         }
         // SAFETY: a plain query.
-        if unsafe { self.device.GetDeviceRemovedReason() }.is_err() {
+        if let Err(reason) = unsafe { self.device.GetDeviceRemovedReason() } {
             fail(format_args!(
-                "host GPU device removed after a submission of {} lists{}{}",
+                "host GPU device removed ({:#x}) after a submission of {} lists{}{}",
+                reason.code().0,
                 runs.len(),
                 self.removal_data(runs),
                 last_notes(runs)

@@ -169,7 +169,16 @@ pub fn run(paths: Vec<PathBuf>, verbose: bool, disasm: bool) -> Result<()> {
                     None => "no parsable DXIL program".to_owned(),
                 } + &native;
                 if verbose {
-                    println!("{}{}: {line}", path.display(), source.label());
+                    // The hash the runtime logs: BLAKE3 of the container's
+                    // own bytes (its size is at 0x18 of the DXBC header).
+                    let size = bytes
+                        .get(0x18..0x1c)
+                        .map(|s| u32::from_le_bytes(s.try_into().unwrap_or([0; 4])) as usize)
+                        .filter(|&n| n <= bytes.len())
+                        .unwrap_or(bytes.len());
+                    let hash = blake3::hash(&bytes[..size]).to_hex();
+                    let hash = &hash[..16];
+                    println!("{}{} [{hash}]: {line}", path.display(), source.label());
                     for l in &listing {
                         println!("{l}");
                     }
