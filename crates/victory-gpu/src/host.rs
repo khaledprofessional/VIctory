@@ -1834,6 +1834,14 @@ impl Host {
             let copy = self.new_list()?;
             copy.close();
             tracing::info!(width, height, format = format.0, "presenting to a window");
+            // Diagnostics: take the foreground. The keyboard stand-in pad only
+            // reads keys while this window has focus, so without this a title
+            // waiting in a menu (the account picker, say) never sees the keys
+            // a scripted run sends.
+            if std::env::var_os("VICTORY_FOCUS").is_some() {
+                let _ = SetForegroundWindow(hwnd);
+                tracing::info!("took the foreground for scripted input");
+            }
             Ok(Presenter {
                 swap_chain,
                 width,
