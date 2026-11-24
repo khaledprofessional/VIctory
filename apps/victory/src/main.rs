@@ -66,6 +66,9 @@ enum Command {
         /// Also list the decoded native instructions (implies --verbose).
         #[arg(long)]
         disasm: bool,
+        /// Only the container at this offset in its file (hex or decimal).
+        #[arg(long, value_parser = parse_offset)]
+        at: Option<u64>,
     },
     /// Run every shader found (containers, SGD5 files) through the
     /// translator and report what it cannot handle yet.
@@ -84,6 +87,9 @@ enum Command {
         /// Worker threads (default: every logical core).
         #[arg(long)]
         jobs: Option<usize>,
+        /// Only the container at this offset in its file (hex or decimal).
+        #[arg(long, value_parser = parse_offset)]
+        at: Option<u64>,
     },
     /// Prepare, map and bind a title executable; with --execute, run it.
     Run {
@@ -145,14 +151,16 @@ fn main() -> Result<()> {
             paths,
             verbose,
             disasm,
-        } => shader::run(paths, verbose || disasm, disasm),
+            at,
+        } => shader::run(paths, verbose || disasm, disasm, at),
         Command::Translate {
             paths,
             validate,
             pipelines,
             list,
             jobs,
-        } => translate::run(paths, validate, pipelines, list, jobs),
+            at,
+        } => translate::run(paths, validate, pipelines, list, jobs, at),
         Command::Run {
             exe,
             unimplemented,
@@ -165,8 +173,17 @@ fn main() -> Result<()> {
     }
 }
 
-fn show_config() -> Result<()> {
-    let cfg = victory_core::Config::load()?;
+/// A file offset as `0x…` or decimal (for `shader-info --at`).
+fn parse_offset(text: &str) -> Result<u64, String> {
+    let text = text.trim();
+    let parsed = match text.strip_prefix("0x").or_else(|| text.strip_prefix("0X")) {
+        Some(hex) => u64::from_str_radix(hex, 16),
+        None => text.parse::<u64>(),
+    };
+    parsed.map_err(|_| format!("{text:?} is not an offset"))
+}
+
+fn show_config() -> Result<()> {    let cfg = victory_core::Config::load()?;
     let status = |p: &Option<PathBuf>| match p {
         Some(p) if p.exists() => format!("{}", p.display()),
         Some(p) => format!("{}  (does not exist)", p.display()),

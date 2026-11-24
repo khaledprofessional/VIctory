@@ -27,6 +27,14 @@ impl Source<'_> {
         }
     }
 
+    /// Where the container starts in its file (the `@` of [`Self::label`]).
+    pub(crate) fn offset(&self) -> usize {
+        match self {
+            Source::Raw { offset, .. } => *offset,
+            Source::Packed(r) => r.offset,
+        }
+    }
+
     pub(crate) fn label(&self) -> String {
         match self {
             Source::Raw { offset, .. } => format!("@{offset:#x}"),
@@ -71,7 +79,7 @@ struct Totals {
     files_with_shaders: usize,
 }
 
-pub fn run(paths: Vec<PathBuf>, verbose: bool, disasm: bool) -> Result<()> {
+pub fn run(paths: Vec<PathBuf>, verbose: bool, disasm: bool, at: Option<u64>) -> Result<()> {
     let paths = crate::default_paths(paths)?;
     let mut t = Totals::default();
     for root in &paths {
@@ -92,6 +100,11 @@ pub fn run(paths: Vec<PathBuf>, verbose: bool, disasm: bool) -> Result<()> {
             };
             let mut found_here = 0;
             for source in sources(&data) {
+                if let Some(at) = at
+                    && source.offset() != at as usize
+                {
+                    continue;
+                }
                 let Some(bytes) = source.bytes() else {
                     eprintln!("corrupt record {}{}", path.display(), source.label());
                     continue;
