@@ -97,3 +97,33 @@ D3D12 device and skip on WARP.
 
 Everything merged keeps its original authorship in the commit graph; the PR
 titles and numbers are above. GPL-3.0-or-later, as upstream.
+
+## The `worldtest` branch: the community's world-run stack
+
+`worldtest` is a second branch here: the upstream bundle
+[bundle/world-stack](https://github.com/MamaLeVrai/VIctory/tree/bundle/world-stack)
+(12 PRs plus the shader stacks: #1402, #453, #1407, #1511, #542, #1516, #1388,
+#1189, #1040, #530, #523, #1175, #1077, and the black-frame diagnostics of
+#1406) merged with the fixes of `nvidia` on top: the Agility runtime check and
+installer, the high-performance adapter selection, the lane-0 address folding,
+and the diagnostics used to get into the world unattended
+(`VICTORY_FOCUS`, `VICTORY_KEYS` driving a pad in slot 0,
+`VICTORY_CAPTURE_EVERY`).
+
+`cargo test -p victory-shader --release`: **203 passed, 1 ignored** (the
+`nvidia` branch has 167 — the stack brings more tests).
+
+What it does on this machine (RTX 4060 Ti, Windows 11, retail dump):
+
+- it boots, plays the video intro, the account picker, agreements, the
+  loading art, and starts the 3D world (437 mesh pipelines first-bound);
+- the first heavy world frames then remove the host GPU device:
+  `host GPU device removed after a submission of 21 lists; no breadcrumbs`,
+  and the title freezes at 0 fps. That is the upstream world-hang (#71),
+  not the black-frame path: the stack reaches further than `nvidia` does,
+  which only renders the world black at 0.25 fps without removing the device.
+
+So the picture on the 3D world is still the open upstream problem; this
+branch is the best base to continue from, and `VICTORY_D3D12_DRED=1` on a
+diagnostics build is the next measurement (it names the allocation and the
+commands in flight when the device goes).
