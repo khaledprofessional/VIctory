@@ -158,6 +158,7 @@ pub fn run(
     pipelines: bool,
     list: bool,
     jobs: Option<usize>,
+    at: Option<u64>,
 ) -> Result<()> {
     let paths = crate::default_paths(paths)?;
     let dll = validate.then(Validator::default_path).flatten();
@@ -194,7 +195,10 @@ pub fn run(
             let Ok(data) = std::fs::read(entry.path()) else {
                 continue;
             };
-            let jobs = sources(&data);
+            let jobs: Vec<Source<'_>> = sources(&data)
+                .into_iter()
+                .filter(|s| at.is_none_or(|at| s.offset() == at as usize))
+                .collect();
             let next = AtomicUsize::new(0);
             std::thread::scope(|s| {
                 for _ in 0..threads.min(jobs.len()) {

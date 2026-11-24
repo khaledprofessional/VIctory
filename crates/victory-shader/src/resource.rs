@@ -495,6 +495,14 @@ impl<'a> Tracer<'a> {
             }
             Term::Value(v) => v,
         };
+        // `v_readfirstlane_b32` of a computed VGPR address: the console builds
+        // a table address per lane (a PC-relative base plus a lane-scaled
+        // index) and then reads it back as a uniform scalar, so the scalar is
+        // that lane-0 address. The auto-exposure and downsample compute
+        // shaders read their constant tables this way.
+        if let Some(inner) = self.first_lane(v) {
+            return self.sum(Term::Value(inner));
+        }
         let dynamic = Sum {
             base: None,
             offset: 0,
@@ -533,6 +541,26 @@ impl<'a> Tracer<'a> {
             offset: x.offset.wrapping_add(y.offset),
             dynamic: x.dynamic.or(y.dynamic),
         }
+    }
+
+    /// The VGPR value a `v_readfirstlane_b32` copies into `v` (through VGPR
+    /// copies), for an address the code builds per lane and then makes
+    /// uniform.
+    fn first_lane(&self, v: Value) -> Option<Value> {
+        let inst = self.def(v)?;
+        if inst.name() != "v_readfirstlane_b32" {
+            return None;
+        }
+        let Fields::Valu(f) = &inst.fields else {
+            return None;
+        };
+        // VOP1: the lane index is an immediate, so the only source is the
+        // VGPR the value is read from.
+        let Some(&Operand::Vector { reg, .. }) = f.src.first() else {
+            return None;
+        };
+        let read = inst.read(Reg::V(reg))?;
+        (read != v).then_some(read)
     }
 
     /// The `s_getpc_b64` writing `lo` as its low dword.
@@ -702,6 +730,11 @@ impl<'a> Tracer<'a> {
         let Term::Value(v) = hi else { return false };
         if v == high {
             return true;
+        }
+        // The high dword of a per-lane address made uniform: its carry is the
+        // one the VGPR addition below computed.
+        if let Some(inner) = self.first_lane(v) {
+            return self.carried(Term::Value(inner), high);
         }
         if let Some((_, [a, b])) = self.sop2(v, &["s_addc_u32"]) {
             return self.carried(a, high) || self.carried(b, high);
