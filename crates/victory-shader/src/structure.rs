@@ -1092,7 +1092,8 @@ impl<'a> Lanes<'a> {
                         self.scc_lane.insert(scc, m);
                     }
                 }
-                // `s_cmp_eq/lg` of a mask: "no lane differs" per lane.
+                // Comparing two tracked masks leaves a uniform SCC. Lowering
+                // can compare the ballots of both masks as scalar values.
                 let width = if self.p.wave64 { "64" } else { "32" };
                 if takes_mask
                     && let (Some(rest), Some(scc)) =
@@ -1101,8 +1102,9 @@ impl<'a> Lanes<'a> {
                         .strip_suffix(width)
                         .is_some_and(|r| r == "eq_u" || r == "lg_u")
                     && let [a, c] = &src[..]
-                    && let (Some((a, _)), Some((c, _))) =
+                    && let (Some((a, a_mask)), Some((c, c_mask))) =
                         (self.operand(inst, a), self.operand(inst, c))
+                    && !(a_mask && c_mask)
                 {
                     let ne = self.b.xor(a, c);
                     let m = if rest.starts_with("eq") {
@@ -1370,6 +1372,33 @@ mod tests {
         };
         assert!(matches!(s.bools.support(when)[..], [Atom::Uniform(_)]));
         assert_eq!(guarded(&s), 0);
+    }
+
+    #[test]
+    fn branches_comparing_two_lane_masks_are_uniform() {
+        for (wave64, eq, ne) in [
+            (false, 0xBF06_7E6A, 0xBF07_7E6A),
+            (true, 0xBF12_7E6A, 0xBF13_7E6A),
+        ] {
+            for compare in [eq, ne] {
+                let p = build(
+                    &[
+                        0x7D84_0080, // v_cmp_eq_u32 vcc, 0, v0
+                        compare,    // s_cmp_eq/lg_u32/u64 vcc, exec
+                        0xBF85_0001, // s_cbranch_scc1 -> 16
+                        0x7E02_0280, // v_mov_b32 v1, 0
+                        S_ENDPGM,
+                    ],
+                    wave64,
+                );
+                let s = structure(&p).unwrap();
+                let LaneExit::Branch { when, .. } = s.exits[0] else {
+                    panic!()
+                };
+                let scc = p.blocks[0].insts[1].write(Reg::Scc).unwrap();
+                assert_eq!(s.bools.support(when), [Atom::Uniform(scc)]);
+            }
+        }
     }
 
     #[test]
