@@ -173,6 +173,18 @@ fn create() -> windows::core::Result<Host> {
             }
         }
         let mut device: Option<ID3D12Device> = None;
+        // The executable opts into the D3D12 Agility SDK (see
+        // `apps/victory/src/agility.rs`): the loader then insists on the
+        // runtime in `D3D12\D3D12Core.dll` beside it and refuses to create a
+        // device without one (0x887E0003, "the SDK version configuration of
+        // the host exe is invalid"), which a title reports as a failure to
+        // serialize its root signature. Say so instead.
+        if !agility_runtime_present() {
+            tracing::warn!(
+                "D3D12\\D3D12Core.dll is missing beside the executable: the host \
+                 device will refuse to start; run tools/install-agility.ps1"
+            );
+        }
         // Diagnostics: the software adapter, on which a shader's wild access
         // is an access violation in this process (a crash report with the
         // address and instruction) instead of a GPU fault and driver reset.
@@ -245,6 +257,71 @@ fn warp_adapter() -> windows::core::Result<IDXGIAdapter> {
             ));
         }
         Ok(adapter)
+    }
+}
+
+/// Whether the Agility SDK runtime the executable opts into sits where the
+/// loader looks for it (`D3D12\D3D12Core.dll` beside the executable).
+fn agility_runtime_present() -> bool {
+    std::env::current_exe()
+        .ok()
+        .and_then(|exe| exe.parent().map(|dir| dir.join("D3D12").join("D3D12Core.dll")))
+        .is_some_and(|dll| dll.is_file())
+}
+
+/// The adapter to run the title on: `VICTORY_ADAPTER` names one (its index in
+/// the enumeration, or part of its description), else the high-performance
+/// one (the discrete GPU of a hybrid machine). `None` (no adapter to choose)
+/// lets D3D12 pick its default.
+fn preferred_adapter() -> windows::core::Result<Option<IDXGIAdapter4>> {
+    // SAFETY: plain DXGI enumeration and description queries.
+    unsafe {
+        let factory: IDXGIFactory6 = CreateDXGIFactory2(DXGI_CREATE_FACTORY_FLAGS(0))?;
+        let want = std::env::var("VICTORY_ADAPTER").ok();
+        let want = want
+            .as_deref()
+            .map(str::trim)
+            .filter(|w| !w.is_empty());
+        let mut chosen = None;
+        for index in 0..64u32 {
+            let Ok(adapter) =
+                factory.EnumAdapterByGpuPreference::<IDXGIAdapter4>(
+                    index,
+                    DXGI_GPU_PREFERENCE_HIGH_PERFORMANCE,
+                )
+            else {
+                break;
+            };
+            let Ok(desc) = adapter.GetDesc1() else {
+                continue;
+            };
+            let name = String::from_utf16_lossy(&desc.Description)
+                .trim_end_matches('\0')
+                .to_owned();
+            tracing::info!(
+                index,
+                name = %name,
+                vendor = format_args!("{:#x}", desc.VendorId),
+                vram_mib = desc.DedicatedVideoMemory / (1024 * 1024),
+                "GPU adapter"
+            );
+            let take = match want {
+                None => index == 0,
+                Some(w) => w.parse::<u32>().map_or_else(
+                    |_| name.to_lowercase().contains(&w.to_lowercase()),
+                    |n| n == index,
+                ),
+            };
+            if take && chosen.is_none() {
+                tracing::info!(name = %name, "running on this adapter");
+                chosen = Some(adapter);
+                break;
+            }
+        }
+        if want.is_some() && chosen.is_none() {
+            tracing::warn!(adapter = ?want, "VICTORY_ADAPTER matches no adapter");
+        }
+        Ok(chosen)
     }
 }
 
