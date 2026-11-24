@@ -138,6 +138,37 @@ verification stopped; the same two things were behind the earlier
 runtime was missing).
 
 
+## Where the 3D world stands
+
+The title boots, the video intro, account picker, agreements, settings and the
+pause menu all render; the 3D world draws (about 2,300 draws a frame) and
+presents **black**. The refusals that matter for that are named lighting
+passes, not the scene geometry — the geometry shaders translate and run:
+
+```
+compute  a cross-lane wave operation in divergent control flow  50
+compute  a lane mask holding lanes elsewhere read as data       71
+compute  a structured buffer of unknown stride                  51
+compute  LDS accesses without a uniform LDS fence in split wave64 39
+   … e.g. indirect_diffuse_lighting:CS_GenerateRayBinOffsets,
+          indirect_light_probes:CS_IrradianceCache_Shade,
+          cascadeshadows_rendering:CS_ShadowRenderTiledCascades*,
+          ptx_prerender:ptfx_CS_lightAtlas_Sprite,
+          hair_resolve, alphaResolve, DepthOfField
+pixel    a cross-lane operation outside compute                  1  (PS_DeferredTextured)
+pixel    barycentrics read directly                              4  (bloom, alpha prepass, …)
+```
+
+`victory shader-info <rpf> --verbose` prints each container with the 16-digit
+hash the runtime logs, so a run's refused hashes can be named; that is how
+the list above was made. A black world with working UI is what a missing
+lighting pass looks like: the deferred buffers and the UI are unlit, the
+lights are not.
+
+These are the deepest part of the translator (the console's 64-lane waves
+emulated on a 32-lane host), and the base branch's emulation refuses exactly
+these shapes. That is the work left for a visible world; it is not a flag.
+
 ## Licence and provenance
 
 Everything merged keeps its original authorship in the commit graph; the PR
