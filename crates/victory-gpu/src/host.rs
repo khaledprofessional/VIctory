@@ -193,7 +193,13 @@ fn create() -> windows::core::Result<Host> {
             D3D12CreateDevice(&adapter, D3D_FEATURE_LEVEL_12_0, &mut device)?;
             tracing::info!("host device on the software adapter (WARP)");
         } else {
-            D3D12CreateDevice(None, D3D_FEATURE_LEVEL_12_0, &mut device)?;
+            // The console has one GPU; a PC may have several. DXGI's default
+            // adapter is the one the desktop is on, which on a hybrid machine
+            // is usually the integrated GPU: the title wants the fastest.
+            match preferred_adapter()? {
+                Some(adapter) => D3D12CreateDevice(&adapter, D3D_FEATURE_LEVEL_12_0, &mut device)?,
+                None => D3D12CreateDevice(None, D3D_FEATURE_LEVEL_12_0, &mut device)?,
+            }
         }
         let device = device.ok_or_else(windows::core::Error::empty)?;
         let messages = debug
@@ -240,8 +246,7 @@ fn create() -> windows::core::Result<Host> {
 
 /// DXGI may return hardware for `EnumWarpAdapter` (notably under Proton).
 /// Reject it before creating a device in diagnostics' software-only mode.
-fn warp_adapter() -> windows::core::Result<IDXGIAdapter> {
-    // SAFETY: plain DXGI adapter queries.
+fn warp_adapter() -> windows::core::Result<IDXGIAdapter> {    // SAFETY: plain DXGI adapter queries.
     unsafe {
         let factory: IDXGIFactory4 = CreateDXGIFactory2(DXGI_CREATE_FACTORY_FLAGS(0))?;
         let adapter: IDXGIAdapter = factory.EnumWarpAdapter()?;
