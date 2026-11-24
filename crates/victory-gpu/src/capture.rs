@@ -31,7 +31,22 @@ pub(crate) fn listed(n: u64) -> bool {
 
 /// Whether frame `n` is saved.
 pub(crate) fn wanted(n: u64) -> bool {
-    folder().is_some() && (n.is_power_of_two() || listed(n))
+    folder().is_some() && (n.is_power_of_two() || listed(n) || every(n))
+}
+
+/// `VICTORY_CAPTURE_EVERY=<n>`: every `n`th frame. The world runs at a
+/// fraction of a frame a second, so the power-of-two frames can all land
+/// before it starts; this catches it wherever it begins.
+fn every(n: u64) -> bool {
+    static EVERY: std::sync::OnceLock<u64> = std::sync::OnceLock::new();
+    let step = *EVERY.get_or_init(|| {
+        std::env::var("VICTORY_CAPTURE_EVERY")
+            .ok()
+            .and_then(|v| v.trim().parse().ok())
+            .filter(|v| *v > 0)
+            .unwrap_or(0)
+    });
+    step > 0 && n.is_multiple_of(step)
 }
 
 /// Saves 8-bit RGBA or BGRA rows (`pitch` bytes apart) as frame `n`.
