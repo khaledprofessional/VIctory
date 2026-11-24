@@ -267,8 +267,16 @@ extern "system" fn find_for_device(_: This, _device: *const c_void, _: *mut Hand
     USER_NOT_FOUND
 }
 
-// Unset slots (no title seen calls them): maximum users, gamer pictures,
-// the UTF-16 token calls, issue resolution.
+// Unset slots (no title seen calls them): gamer pictures, the UTF-16 token
+// calls, issue resolution.
+/// 1: one offline local user can be signed in at a time.
+///
+/// Slot 0x30: maximum users. The title calls this during account init after
+/// `XUserAddAsync` and uses the output (issues #348, #622).
+extern "system" fn get_max_users(_: This, _: Handle, out: *mut u32) -> HRESULT {
+    put(out, 1)
+}
+
 static VTABLE: Methods<35> = Methods([
     missing::<0> as *const (),             // 0x00 QueryInterface
     add_ref as *const (),                  // 0x08 AddRef
@@ -276,7 +284,7 @@ static VTABLE: Methods<35> = Methods([
     duplicate as *const (),                // 0x18
     close as *const (),                    // 0x20
     compare as *const (),                  // 0x28
-    missing::<6> as *const (),             // 0x30 maximum users
+    get_max_users as *const (),            // 0x30 maximum users
     add_async as *const (),                // 0x38
     add_result as *const (),               // 0x40
     get_local_id as *const (),             // 0x48
