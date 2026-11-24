@@ -1215,10 +1215,14 @@ mod tests {
             code: words.iter().flat_map(|w| w.to_le_bytes()).collect(),
         };
         let cs = emit_synthetic(&[], &native).unwrap();
-        // PSV0 must use RuntimeInfo3 (52 bytes) for validator 1.8.
+        // PSV0's runtime info: 52 bytes (RuntimeInfo3) when the program needs
+        // validator 1.8 (SM 6.6 compute derivatives, which an implicit sample
+        // in compute takes), else 48 (RuntimeInfo2). The validation below
+        // decides whether the choice was right.
         let parsed = Container::parse(&cs.dxil).unwrap();
         let psv0 = parsed.part(FourCC::PSV0).unwrap().data;
-        assert_eq!(crate::dxbc::u32_at(psv0, 0).unwrap(), 52);
+        let size = crate::dxbc::u32_at(psv0, 0).unwrap();
+        assert!(matches!(size, 48 | 52), "runtime info size {size}");
         #[cfg(windows)]
         {
             validate_if_available(&cs.dxil);

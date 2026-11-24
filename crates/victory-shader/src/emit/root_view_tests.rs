@@ -105,6 +105,7 @@ fn build(kind: ResourceType) -> HostShader {
         outputs: Vec::new(),
         prims: Vec::new(),
         mesh_stride: 0,
+        options: super::TranslateOptions::default(),
     })
     .expect("lower");
     let shader = HostShader {

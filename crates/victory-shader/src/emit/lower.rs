@@ -4187,15 +4187,6 @@ impl<'a> Lower<'a> {
             .copied()
             .ok_or("an untracked descriptor")?;
         let kind = self.used_kind(src);
-        // A descriptor read from the resource heap at a computed index (no
-        // used-resource entry covers it) is a buffer view in the heap, which
-        // the host makes raw (see the module notes): read it raw too. Read as
-        // a constant buffer it is a CBV handle on an SRV slot, which the host
-        // device does not define (WARP faults, a GPU can hang).
-        let from_heap = kind.is_none()
-            && matches!(src, Source::Loaded { load, .. }
-                if self.scalar.get(load).and_then(|a| self.x.native.layout.get(a.param))
-                    .is_some_and(|rp| rp.root == RootType::ResourceHeap));
         let c = self.cur;
         let (base, extra) = self.built_offset(src)?;
         let offset = &((*offset as u32).wrapping_add(base) as i32);
@@ -9363,6 +9354,7 @@ mod tests {
             outputs: vec![],
             prims: vec![],
             mesh_stride: 0,
+            options: super::TranslateOptions::default(),
         })
         .unwrap();
     }
@@ -9424,6 +9416,7 @@ mod tests {
                 outputs: vec![],
                 prims: vec![],
                 mesh_stride: 0,
+                options: super::TranslateOptions::default(),
             })
         };
 

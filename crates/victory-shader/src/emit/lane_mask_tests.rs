@@ -141,6 +141,7 @@ fn lowered(words: &[u32]) -> Result<lower::Lowered, crate::ShaderError> {
         outputs: Vec::new(),
         prims: Vec::new(),
         mesh_stride: 0,
+        options: super::TranslateOptions::default(),
     })
 }
 

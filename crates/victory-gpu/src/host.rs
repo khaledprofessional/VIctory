@@ -181,7 +181,13 @@ fn create() -> windows::core::Result<Host> {
             D3D12CreateDevice(&adapter, D3D_FEATURE_LEVEL_12_0, &mut device)?;
             tracing::info!("host device on the software adapter (WARP)");
         } else {
-            D3D12CreateDevice(None, D3D_FEATURE_LEVEL_12_0, &mut device)?;
+            // The console has one GPU; a PC may have several. DXGI's default
+            // adapter is the one the desktop is on, which on a hybrid machine
+            // is usually the integrated GPU: the title wants the fastest.
+            match preferred_adapter()? {
+                Some(adapter) => D3D12CreateDevice(&adapter, D3D_FEATURE_LEVEL_12_0, &mut device)?,
+                None => D3D12CreateDevice(None, D3D_FEATURE_LEVEL_12_0, &mut device)?,
+            }
         }
         let device = device.ok_or_else(windows::core::Error::empty)?;
         let messages = debug
@@ -266,8 +272,7 @@ fn recommended_wave64_mode(device: &ID3D12Device) -> victory_shader::emit::Wave6
 
 /// DXGI may return hardware for `EnumWarpAdapter` (notably under Proton).
 /// Reject it before creating a device in diagnostics' software-only mode.
-fn warp_adapter() -> windows::core::Result<IDXGIAdapter> {
-    // SAFETY: plain DXGI adapter queries.
+fn warp_adapter() -> windows::core::Result<IDXGIAdapter> {    // SAFETY: plain DXGI adapter queries.
     unsafe {
         let factory: IDXGIFactory4 = CreateDXGIFactory2(DXGI_CREATE_FACTORY_FLAGS(0))?;
         let adapter: IDXGIAdapter = factory.EnumWarpAdapter()?;
@@ -283,6 +288,62 @@ fn warp_adapter() -> windows::core::Result<IDXGIAdapter> {
             ));
         }
         Ok(adapter)
+    }
+}
+
+/// The adapter to run the title on: `VICTORY_ADAPTER` names one (its index in
+/// the enumeration, or part of its description), else the high-performance
+/// one (the discrete GPU of a hybrid machine). `None` (no adapter to choose)
+/// lets D3D12 pick its default.
+fn preferred_adapter() -> windows::core::Result<Option<IDXGIAdapter4>> {
+    // SAFETY: plain DXGI enumeration and description queries.
+    unsafe {
+        let factory: IDXGIFactory6 = CreateDXGIFactory2(DXGI_CREATE_FACTORY_FLAGS(0))?;
+        let want = std::env::var("VICTORY_ADAPTER").ok();
+        let want = want
+            .as_deref()
+            .map(str::trim)
+            .filter(|w| !w.is_empty());
+        let mut chosen = None;
+        for index in 0..64u32 {
+            let Ok(adapter) =
+                factory.EnumAdapterByGpuPreference::<IDXGIAdapter4>(
+                    index,
+                    DXGI_GPU_PREFERENCE_HIGH_PERFORMANCE,
+                )
+            else {
+                break;
+            };
+            let Ok(desc) = adapter.GetDesc1() else {
+                continue;
+            };
+            let name = String::from_utf16_lossy(&desc.Description)
+                .trim_end_matches('\0')
+                .to_owned();
+            tracing::info!(
+                index,
+                name = %name,
+                vendor = format_args!("{:#x}", desc.VendorId),
+                vram_mib = desc.DedicatedVideoMemory / (1024 * 1024),
+                "GPU adapter"
+            );
+            let take = match want {
+                None => index == 0,
+                Some(w) => w.parse::<u32>().map_or_else(
+                    |_| name.to_lowercase().contains(&w.to_lowercase()),
+                    |n| n == index,
+                ),
+            };
+            if take && chosen.is_none() {
+                tracing::info!(name = %name, "running on this adapter");
+                chosen = Some(adapter);
+                break;
+            }
+        }
+        if want.is_some() && chosen.is_none() {
+            tracing::warn!(adapter = ?want, "VICTORY_ADAPTER matches no adapter");
+        }
+        Ok(chosen)
     }
 }
 
