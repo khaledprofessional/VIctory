@@ -312,10 +312,22 @@ fn preferred_adapter() -> windows::core::Result<Option<IDXGIAdapter4>> {
             );
             let take = match want {
                 None => index == 0,
-                Some(w) => w.parse::<u32>().map_or_else(
-                    |_| name.to_lowercase().contains(&w.to_lowercase()),
-                    |n| n == index,
-                ),
+                Some(w) => {
+                    let w = w.to_lowercase();
+                    w.parse::<u32>().map_or_else(
+                        |_| {
+                            // A vendor name, or part of the description.
+                            let vendor = match w.as_str() {
+                                "amd" => desc.VendorId == 0x1002,
+                                "nvidia" | "nv" => desc.VendorId == 0x10de,
+                                "intel" => desc.VendorId == 0x8086,
+                                _ => false,
+                            };
+                            vendor || name.to_lowercase().contains(&w)
+                        },
+                        |n| n == index,
+                    )
+                }
             };
             if take && chosen.is_none() {
                 tracing::info!(name = %name, "running on this adapter");
