@@ -1134,6 +1134,23 @@ mod host {
 
     impl Source for Host {
         fn pad(&mut self, slot: usize) -> Option<PadState> {
+            // Diagnostics: `VICTORY_KEYS` also drives a pad in slot 0, for a
+            // title that polls XInput itself rather than reading a keyboard
+            // (Grand Theft Auto VI's account picker waits for one).
+            #[cfg(feature = "diagnostics")]
+            if slot == 0 {
+                let down = scripted();
+                if !down.is_empty() {
+                    let keys: Vec<KeyState> = down
+                        .into_iter()
+                        .map(|vk| KeyState {
+                            virtual_key: vk,
+                            ..Default::default()
+                        })
+                        .collect();
+                    return Some(fallback(&keys));
+                }
+            }
             if self.empty_until[slot].is_some_and(|until| Instant::now() < until) {
                 return None;
             }
