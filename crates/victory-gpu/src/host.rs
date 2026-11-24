@@ -173,6 +173,18 @@ fn create() -> windows::core::Result<Host> {
             }
         }
         let mut device: Option<ID3D12Device> = None;
+        // The executable opts into the D3D12 Agility SDK (see
+        // `apps/victory/src/agility.rs`): the loader then insists on the
+        // runtime in `D3D12\D3D12Core.dll` beside it and refuses to create a
+        // device without one (0x887E0003, "the SDK version configuration of
+        // the host exe is invalid"), which a title reports as a failure to
+        // serialize its root signature. Say so instead.
+        if !agility_runtime_present() {
+            tracing::warn!(
+                "D3D12\\D3D12Core.dll is missing beside the executable: the host \
+                 device will refuse to start; run tools/install-agility.ps1"
+            );
+        }
         // Diagnostics: the software adapter, on which a shader's wild access
         // is an access violation in this process (a crash report with the
         // address and instruction) instead of a GPU fault and driver reset.
@@ -289,6 +301,15 @@ fn warp_adapter() -> windows::core::Result<IDXGIAdapter> {    // SAFETY: plain D
         }
         Ok(adapter)
     }
+}
+
+/// Whether the Agility SDK runtime the executable opts into sits where the
+/// loader looks for it (`D3D12\D3D12Core.dll` beside the executable).
+fn agility_runtime_present() -> bool {
+    std::env::current_exe()
+        .ok()
+        .and_then(|exe| exe.parent().map(|dir| dir.join("D3D12").join("D3D12Core.dll")))
+        .is_some_and(|dll| dll.is_file())
 }
 
 /// The adapter to run the title on: `VICTORY_ADAPTER` names one (its index in
