@@ -494,8 +494,15 @@ impl<'a> Tracer<'a> {
         // index) and then reads it back as a uniform scalar, so the scalar is
         // that lane-0 address. The auto-exposure and downsample compute
         // shaders read their constant tables this way.
+        //
+        // Only a program-counter base is followed: a first-lane *descriptor*
+        // offset is a waterfall, where each lane reads a different entry and
+        // the tracing below must keep it per lane.
         if let Some(inner) = self.first_lane(v) {
-            return self.sum(Term::Value(inner));
+            let folded = self.sum(Term::Value(inner));
+            if folded.base.is_some_and(|b| self.getpc(b).is_some()) {
+                return folded;
+            }
         }
         let dynamic = Sum {
             base: None,
