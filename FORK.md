@@ -23,6 +23,7 @@ this repository.
 | merge of [#1407](https://github.com/Marvisak/VIctory/pull/1407) | a lane mask holding lanes that do not run where it is written, and mask joins, read as numbers |
 | merge of [#1412](https://github.com/Marvisak/VIctory/pull/1412) | scalar comparisons between lane masks stay uniform (a branch no longer diverges between lanes that agree) |
 | merge of [#1409](https://github.com/Marvisak/VIctory/pull/1409) | heap-loaded `s_buffer_load` reads raw (a CBV handle on an SRV slot is undefined on the host), `SampleLevel` outside pixel shaders |
+| `Shaders: an address built per lane and read back with v_readfirstlane is lane 0's` | the post-processing chain's constant tables: the console builds a PC-relative table address plus a lane-scaled index in VGPRs, reads it back with `v_readfirstlane_b32`, and loads through it. Tracing now sees through that, so `avgLuminanceCompute:ColorDownsampleCS` and friends translate (they were the reason the world composite stayed black) |
 | `GPU: run on the high-performance adapter` | the host device is created on DXGI's high-performance adapter instead of the default one, which on a machine with an integrated GPU is often the iGPU; `VICTORY_ADAPTER=<index>` or `<part of the name>` overrides it, and every adapter is logged |
 
 The base branch already carries the Wave64 emulation for 32-lane hosts
@@ -38,10 +39,14 @@ the emitted count goes:
 
 | Stage | before | after | delta |
 |-------|--------|-------|-------|
-| Vertex and pixel | 12,854 of 14,027 | 13,104 of 14,027 | +250 |
-| Compute | 1,465 of 2,582 | 1,982 of 2,582 | +517 |
+| Vertex and pixel | 12,854 of 14,027 | 13,108 of 14,031 | +254 |
+| Compute | 1,465 of 2,582 | 1,987 of 2,587 | +522 |
 | Mesh | 8,380 of 8,713 | 8,380 of 8,713 | 0 |
-| **All** | **22,699 (87.0%)** | **23,466 (89.9%)** | **+767** |
+| **All** | **22,699** | **23,475** | **+776** |
+
+(The per-stage denominators move with the count: a program only reaches
+emission when resource tracing succeeded for it, which is what the last
+commit improves. `resources tracked` goes 25,724 → 25,733 of 26,084.)
 
 The failure reasons that the run in the issue log shows, before → after:
 
