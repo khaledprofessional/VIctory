@@ -76,6 +76,11 @@ game_dir = 'D:\GTA6'
 
 cargo build --release -p victory
 
+# The exe opts into the D3D12 Agility SDK, so the loader insists on the
+# runtime beside it; without it there is no device at all (0x887E0003, which
+# the title reports as a failure to serialize its root signature).
+powershell -ExecutionPolicy Bypass -File tools\install-agility.ps1
+
 # the shader census (no game data needed for the tests, this needs your dump)
 target\release\victory.exe translate D:\GTA6\shaders.rpf --list --jobs 12
 
@@ -85,13 +90,48 @@ target\release\victory.exe run D:\GTA6\game_scarlett_master.exe --execute
 
 `victory config` prints the resolved paths. Logging is
 `VICTORY_LOG=info` (a release build logs info and above); shader refusals are
-`victory_gpu::pipeline` warnings that name the reason.
+`victory_gpu::pipeline` warnings that name the reason. The host logs every
+adapter it sees and the one it runs on, so `GPU adapter … name=…` in the log
+says which GPU the title actually got; `VICTORY_ADAPTER=<index|name part>`
+chooses another.
+
+### Overlay hooks
+
+If the title dies inside `NvPresent64.dll` or `RTSSHooks64.dll` (an access
+violation into unmapped memory right after the first presented frames, as
+`VIctory: unhandled exception 0xc0000005 at 0x…: nothing mapped there`), it
+is a third-party present hook — MSI Afterburner / RivaTuner Statistics
+Server, or the NVIDIA app overlay — not the title: those tools patch
+`IDXGISwapChain::Present` of every D3D process. Add `victory.exe` to
+RivaTuner's application list with hooking off, or close the overlay while
+running.
 
 Machine this branch was built and measured on: Windows 11, Ryzen 7 7700X,
 GeForce RTX 4060 Ti (and an AMD integrated GPU, which is why the adapter
 selection above exists), Rust 1.98.1. `cargo test -p victory-shader
 --release` passes (167 tests, 1 ignored); the GPU-backed tests need a
 D3D12 device and skip on WARP.
+
+### What the run on that machine showed
+
+With the Agility runtime installed and the adapter selected:
+
+```
+victory_gpu::host: GPU adapter index=0 name=NVIDIA GeForce RTX 4060 Ti vendor=0x10de vram_mib=7949
+victory_gpu::host: running on this adapter name=NVIDIA GeForce RTX 4060 Ti
+victory_gpu::host: host D3D12 device ready
+victory_gpu::frame: frame interval interval=33.333ms
+victory_gpu::queue: frame presented frame=1 …
+victory_gpu::pipeline::make: host pipelines all made made=26 loaded=0 started_early=26
+```
+
+so the device is created on the discrete GPU, the first pipelines are built
+from translated shaders and frames are presented. The run then died in the
+RivaTuner/NVIDIA present hooks described above, which is where this branch's
+verification stopped; the same two things were behind the earlier
+`D3D12SerializeVersionedRootSignature` crash (no device, because the Agility
+runtime was missing).
+
 
 ## Licence and provenance
 
